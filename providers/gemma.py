@@ -2,6 +2,7 @@
 # Purpose: Local Gemma provider using HuggingFace Transformers; singleton per model.
 from __future__ import annotations
 from typing import Optional, Any
+import asyncio
 import threading
 from dataclasses import dataclass
 
@@ -42,8 +43,14 @@ class LocalGemma:
             return inst
 
     async def acomplete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> str:
-        """Return model text output given a prompt and optional system message."""
+        """Return model text output given a prompt and optional system message.
+
+        Offloads the blocking pipeline call to a thread to avoid blocking the
+        event loop.
+        """
         system_text = f"{system.strip()}\n" if system else ""
         text = system_text + f"user: {prompt}"
-        out = self.runner.pipe(text, max_new_tokens=max_tokens, do_sample=False)
+        out = await asyncio.to_thread(
+            self.runner.pipe, text, max_new_tokens=max_tokens, do_sample=False
+        )
         return out[0]["generated_text"]
