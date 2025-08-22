@@ -350,7 +350,7 @@ class Monologue:
         )
 
     async def _dispatch_actions(self, actions: List[ActionType]):
-        from actions import registry as ACTION_HANDLERS
+        from action_registry import ACTION_HANDLERS
         for act in actions:
             h = ACTION_HANDLERS.get(act.type)
             if h is None:

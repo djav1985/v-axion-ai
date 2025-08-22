@@ -1,11 +1,19 @@
 
 # v-axion-ai/action_registry.py
-# Purpose: Role-scoped action exposure with model options in Open Monologue docs.
+# Purpose: Canonical registry for role-scoped actions and their handlers.
 
 from __future__ import annotations
-import os
-from typing import List, Dict, Any
-from models.actions import ACTION_DEFS
+import os, json, uuid
+from typing import List, Dict, Any, Callable, Awaitable
+from models.actions import (
+    ACTION_DEFS,
+    OpenMonologue,
+    AskUser,
+    Sleep,
+    MessageMonologue,
+    ListMonologue,
+    KillMonologue,
+)
 
 def _available_models() -> List[Dict[str, Any]]:
     models = [{"provider":"hf_gemma","id":"google/gemma-3-270m","local":True}]
@@ -41,3 +49,71 @@ def get_actions_for(role: str) -> List[Dict[str, Any]]:
             desc += " Available models: " + ", ".join(f"{m['provider']}/{m['id']}" for m in avail) + "."
         out.append({"action": name, "description": desc, "schema": Model.model_json_schema()})
     return out
+
+
+# ---------------------------------------------------------------------------
+# Action handlers
+# ---------------------------------------------------------------------------
+
+Handler = Callable[["Monologue", Any], Awaitable[None]]
+
+
+async def _handle_open_monologue(monologue: "Monologue", model: OpenMonologue) -> None:
+    """Spawn a new child monologue under the caller."""
+    child = await monologue.o.request_spawn(
+        role=model.role, goal=model.goal, parent_id=monologue.state.id
+    )
+    monologue.children.add(child.state.id)
+
+
+async def _handle_ask_user(monologue: "Monologue", model: AskUser) -> None:
+    """Route a question through the Communication monologue and await reply."""
+    cid = model.correlation_id or uuid.uuid4().hex[:8]
+    await monologue.o.comms_show_question(cid, model.question, model.choices or [])
+    reply = await monologue.o.await_user_reply(cid)
+    if reply is not None:
+        await monologue.inbox.put(f"[reply cid:{cid}] {reply}")
+
+
+async def _handle_sleep(monologue: "Monologue", model: Sleep) -> None:
+    """Sleep with early wake if a message arrives for the target."""
+    target = model.target_id or monologue.state.id
+    await monologue.o.sleep_with_early_wake(target, model.seconds)
+
+
+async def _handle_message_monologue(monologue: "Monologue", model: MessageMonologue) -> None:
+    """Send a message to another monologue and optionally wait for reply."""
+    req_id = model.request_id or uuid.uuid4().hex[:8]
+    payload = {
+        "from_id": monologue.state.id,
+        "to_id": model.to_id,
+        "content": model.content,
+        "request_id": req_id,
+    }
+    await monologue.o.route_incoming(model.to_id, payload)
+    if model.wait_for_reply:
+        reply = await monologue.o.await_reply(req_id)
+        if isinstance(reply, dict):
+            await monologue.inbox.put(reply.get("content", ""))
+
+
+async def _handle_list_monologue(monologue: "Monologue", model: ListMonologue) -> None:
+    """List active monologues and enqueue the summary for the caller."""
+    lst = monologue.o.list_monologues()
+    await monologue.inbox.put(json.dumps(lst))
+
+
+async def _handle_kill_monologue(monologue: "Monologue", model: KillMonologue) -> None:
+    """Terminate monologues according to policy."""
+    await monologue.o.kill_with_policy(model.target_id)
+
+
+ACTION_HANDLERS: Dict[str, Handler] = {
+    "open_monologue": _handle_open_monologue,
+    "ask_user": _handle_ask_user,
+    "sleep": _handle_sleep,
+    "message_monologue": _handle_message_monologue,
+    "list_monologue": _handle_list_monologue,
+    "kill_monologue": _handle_kill_monologue,
+}
+
