@@ -3,8 +3,10 @@
 # Purpose: Pydantic action schemas and registry metadata for the agent runtime.
 
 from __future__ import annotations
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any, Annotated
+from enum import Enum
+from typing import Literal
+from pydantic import BaseModel, Field, ValidationError, TypeAdapter
 
 class OpenMonologue(BaseModel):
     """Open a new sub-monologue. Defaults to local Gemma; OpenAI optional if key present."""
@@ -51,3 +53,117 @@ ACTION_DEFS: Dict[str, Dict[str, Any]] = {
     "list_monologue": {"description": "List active monologues (main only).", "model": ListMonologue},
     "kill_monologue": {"description": "Kill policy (main any sub except Comms; sub self-only).", "model": KillMonologue},
 }
+
+# ---------------------------------------------------------------------------
+# Orchestrator action models
+# ---------------------------------------------------------------------------
+
+class ActionName(str, Enum):
+    """Canonical action names emitted by the controller."""
+
+    INJECT = "inject"
+    SPAWN = "spawn"
+    STOP_SELF = "stop_self"
+    STOP_CHILD = "stop_child"
+    SLEEP = "sleep"
+    IDLE = "idle"
+    TOOL = "tool"
+    REPORT_STATUS = "report_status"
+    ROUTE_MESSAGE = "route_message"
+    ASK_USER = "ask_user"
+    USER_REPLY = "user_reply"
+
+
+class InjectAction(BaseModel):
+    type: Literal[ActionName.INJECT] = ActionName.INJECT
+    content: str
+
+
+class SpawnAction(BaseModel):
+    type: Literal[ActionName.SPAWN] = ActionName.SPAWN
+    role: str
+    goal: str
+
+
+class StopSelfAction(BaseModel):
+    type: Literal[ActionName.STOP_SELF] = ActionName.STOP_SELF
+
+
+class StopChildAction(BaseModel):
+    type: Literal[ActionName.STOP_CHILD] = ActionName.STOP_CHILD
+    id: str
+
+
+class SleepAction(BaseModel):
+    type: Literal[ActionName.SLEEP] = ActionName.SLEEP
+    seconds: float
+
+
+class IdleAction(BaseModel):
+    type: Literal[ActionName.IDLE] = ActionName.IDLE
+    seconds: float
+
+
+class ToolAction(BaseModel):
+    type: Literal[ActionName.TOOL] = ActionName.TOOL
+    name: str
+    args: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ReportStatusAction(BaseModel):
+    type: Literal[ActionName.REPORT_STATUS] = ActionName.REPORT_STATUS
+
+
+class RouteMessageAction(BaseModel):
+    type: Literal[ActionName.ROUTE_MESSAGE] = ActionName.ROUTE_MESSAGE
+    to: str
+    content: str
+
+
+class AskUserAction(BaseModel):
+    type: Literal[ActionName.ASK_USER] = ActionName.ASK_USER
+    id: str
+    content: str
+    choices: Optional[List[str]] = None
+
+
+class UserReplyAction(BaseModel):
+    type: Literal[ActionName.USER_REPLY] = ActionName.USER_REPLY
+    in_reply_to: str
+    content: str
+
+
+ActionType = Annotated[
+    InjectAction
+    | SpawnAction
+    | StopSelfAction
+    | StopChildAction
+    | SleepAction
+    | IdleAction
+    | ToolAction
+    | ReportStatusAction
+    | RouteMessageAction
+    | AskUserAction
+    | UserReplyAction,
+    Field(discriminator="type"),
+]
+
+_ACTION_ADAPTER = TypeAdapter(List[ActionType])
+
+
+def parse_actions(actions: List[dict]) -> List[ActionType]:
+    """Validate and convert raw action dicts to ActionType models.
+
+    Any invalid entries are skipped.
+    """
+
+    try:
+        return _ACTION_ADAPTER.validate_python(actions)
+    except ValidationError:
+        valid: List[ActionType] = []
+        for a in actions:
+            try:
+                valid.append(_ACTION_ADAPTER.validate_python([a])[0])
+            except ValidationError:
+                continue
+        return valid
