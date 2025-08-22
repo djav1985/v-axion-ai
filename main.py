@@ -19,6 +19,15 @@ async def printer(inj: InjectionModel, main_state: MonologueStateModel):
 async def run(goal: str, dash: bool):
     llm = get_provider("hf_gemma")
     orch = Orchestrator(llm, on_injection=printer)
+
+    async def cli_question(cid: str, question: str, choices: list[str]):
+        print(f"[QUESTION {cid}] {question} choices={choices}")
+        loop = asyncio.get_running_loop()
+        reply = await loop.run_in_executor(None, lambda: input("> "))
+        await orch.on_user_message(reply, cid)
+
+    orch.on_question = cli_question
+
     await orch.start(main_goal=goal, with_comms=True)
     if dash and os.getenv("DASH_ENABLED","true").lower() == "true":
         from dashboard.tui import run_tui
