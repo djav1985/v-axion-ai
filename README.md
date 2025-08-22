@@ -2,7 +2,7 @@
 # Interolog (Production)
 
 Internal monologue orchestrator with:
-- Pydantic-typed actions and per-file handlers
+- Pydantic-typed actions with centralized handler registry (`action_registry.py`)
 - Tool registry (files, shell) with dry-run defaults
 - Live terminal dashboard (actors table, event feed, chat)
 - Telemetry queue + JSONL logging
