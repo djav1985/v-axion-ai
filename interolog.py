@@ -79,6 +79,8 @@ class Orchestrator:
         self._pending_replies: dict[str, asyncio.Future] = {}
         self._inboxes: dict[str, asyncio.Queue] = {}
         self.tool_registry = TOOL_REGISTRY
+        # The actor currently invoking orchestrator APIs. Used for permission checks.
+        self.current_actor: "Monologue" | None = None
 
     @property
     def main(self) -> "Monologue":
@@ -314,7 +316,13 @@ class Monologue:
                         except asyncio.QueueEmpty:
                             break
                     for m in msgs:
-                        await self.o.inject_to_main(InjectionModel(from_id=self.state.id, content=f"[user] {m}"))
+                        try:
+                            self.o.current_actor = self
+                            await self.o.inject_to_main(
+                                InjectionModel(from_id=self.state.id, content=f"[user] {m}")
+                            )
+                        finally:
+                            self.o.current_actor = None
                 self.state.step += 1
                 await asyncio.sleep(self.o.cycle_delay)
                 pass
@@ -348,10 +356,12 @@ class Monologue:
             if h is None:
                 continue
             try:
+                self.o.current_actor = self
                 await h(self, act)
             except Exception as e:
                 self.state.last_error = str(e)
-                pass
+            finally:
+                self.o.current_actor = None
 
     async def _sleep(self, seconds: float):
         await asyncio.sleep(seconds)
