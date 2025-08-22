@@ -17,7 +17,7 @@ async def printer(inj: InjectionModel, main_state: MonologueStateModel):
     print(f"[MAIN<-{inj.from_id}] {inj.content}")
 
 async def run(goal: str, dash: bool):
-    llm = OpenAIChat()  # reads env for key/model
+    llm = get_provider("hf_gemma")
     orch = Orchestrator(llm, on_injection=printer)
     await orch.start(main_goal=goal, with_comms=True)
     if dash and os.getenv("DASH_ENABLED","true").lower() == "true":
