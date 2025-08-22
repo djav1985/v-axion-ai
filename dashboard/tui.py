@@ -35,8 +35,17 @@ async def input_loop(orchestrator, dbstate: DashboardState):
             else:
                 dbstate.add_chat(f"[sys] unknown command: {msg}")
         else:
-            dbstate.add_chat(f"[you] {msg}")
-            await orchestrator.comms_send(msg)
+            if msg.startswith("@"):
+                try:
+                    cid, content = msg[1:].split(" ", 1)
+                except ValueError:
+                    dbstate.add_chat("[sys] usage: @<cid> <reply>")
+                    continue
+                dbstate.add_chat(f"[you->{cid}] {content}")
+                await orchestrator.on_user_message(content, cid)
+            else:
+                dbstate.add_chat(f"[you] {msg}")
+                await orchestrator.on_user_message(msg)
 
 async def draw_loop(orchestrator, dbstate: DashboardState, refresh: float = 0.5):
     while True:
@@ -67,7 +76,7 @@ async def draw_loop(orchestrator, dbstate: DashboardState, refresh: float = 0.5)
             s = e.get("summary", "") or str(e)
             print(f" - [{et}] {s}"[:cols])
         print("-"*cols)
-        print("Chat: (type to send, /kill <id>, /quit)")
+        print("Chat: (type to send, @cid <msg> to reply, /kill <id>, /quit)")
         for line in dbstate.chat[-5:]:
             print(f" {line}"[:cols])
         sys.stdout.flush()
@@ -75,9 +84,15 @@ async def draw_loop(orchestrator, dbstate: DashboardState, refresh: float = 0.5)
 
 async def run_tui(orchestrator, refresh: float = 0.5):
     dbstate = DashboardState()
+    async def question_handler(cid, question, choices):
+        dbstate.add_chat(f"[ask {cid}] {question} choices={choices}")
+
+    orchestrator.on_question = question_handler
+
     tasks = [
         asyncio.create_task(draw_loop(orchestrator, dbstate, refresh)),
-        asyncio.create_task(input_loop(orchestrator, dbstate)),        asyncio.create_task(pump_events(orchestrator, dbstate, refresh)),
+        asyncio.create_task(input_loop(orchestrator, dbstate)),
+        asyncio.create_task(pump_events(orchestrator, dbstate, refresh)),
     ]
     try:
         await asyncio.gather(*tasks)

@@ -63,6 +63,7 @@ class Orchestrator:
         cycle_delay: float = float(os.getenv("CYCLE_DELAY", 0.2)),
         max_children: int = int(os.getenv("MAX_CHILDREN", 16)),
         on_injection: Optional[Callable[[InjectionModel, MonologueStateModel], Awaitable[None]]] = None,
+        on_question: Optional[Callable[[str, str, List[str]], Awaitable[None]]] = None,
         telemetry: Optional[Any] = None,
     ):
         self.llm = llm
@@ -70,6 +71,7 @@ class Orchestrator:
         self.cycle_delay = cycle_delay
         self.max_children = max_children
         self.on_injection = on_injection or (lambda inj, st: asyncio.sleep(0))  # type: ignore
+        self.on_question = on_question
         self._actors: Dict[str, Monologue] = {}
         self._main_id: Optional[str] = None
         self._comms_id: Optional[str] = None
@@ -253,10 +255,10 @@ class Orchestrator:
         await self.notify_actor_message(target_id)
 
     async def comms_show_question(self, correlation_id: str, question: str, choices: list[str]):
-        # In real app, render via UI. Here, enqueue to comms inbox for visibility.
-        if self._comms_id and self._comms_id in self._actors:
-            await self._actors[self._comms_id].inbox.put(f"[ASK cid:{correlation_id}] {question} choices={choices or []}")
-            await self.notify_actor_message(self._comms_id)
+        if self.on_question:
+            await self.on_question(correlation_id, question, choices)
+        else:
+            print(f"[ASK cid:{correlation_id}] {question} choices={choices or []}")
 
     async def await_user_reply(self, correlation_id: str, timeout: float | None = None):
         # Reuse reply mechanism
