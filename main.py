@@ -1,6 +1,6 @@
 
 from __future__ import annotations
-import argparse, asyncio, os
+import argparse, asyncio, os, sys
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -14,7 +14,7 @@ from models.injections import InjectionModel
 from models.state import MonologueStateModel
 
 async def printer(inj: InjectionModel, main_state: MonologueStateModel):
-    print(f"[MAIN<-{inj.from_id}] {inj.content}")
+    print(f"[MAIN<-{inj.from_id}] {inj.content}", flush=True)
 
 async def run(goal: str, dash: bool):
     llm = get_provider("hf_gemma")
@@ -33,11 +33,19 @@ async def run(goal: str, dash: bool):
         from dashboard.tui import run_tui
         await run_tui(orch, refresh=float(os.getenv("DASH_REFRESH","0.5")))
     else:
-        try:
+        async def forward_stdin():
+            loop = asyncio.get_running_loop()
             while True:
-                await asyncio.sleep(3600)
-        except KeyboardInterrupt:
-            pass
+                line = await loop.run_in_executor(None, sys.stdin.readline)
+                if not line:
+                    continue
+                line = line.rstrip("\n")
+                if line.strip() == "/quit":
+                    break
+                await orch.comms_send(line)
+
+        stdin_task = asyncio.create_task(forward_stdin())
+        await stdin_task
     await orch.shutdown()
 
 def main():
