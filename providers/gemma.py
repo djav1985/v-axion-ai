@@ -41,8 +41,9 @@ class LocalGemma:
             _singletons[model_id] = inst
             return inst
 
-    async def complete(self, system_prompt: str, messages: list[dict], max_tokens: int = 512) -> str:
-        # Very simple chat turn join; adapt as needed.
-        text = system_prompt.strip() + "\n" + "\n".join(f"{m.get('role','user')}: {m.get('content','')}" for m in messages)
+    async def acomplete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> str:
+        """Return model text output given a prompt and optional system message."""
+        system_text = f"{system.strip()}\n" if system else ""
+        text = system_text + f"user: {prompt}"
         out = self.runner.pipe(text, max_new_tokens=max_tokens, do_sample=False)
         return out[0]["generated_text"]
