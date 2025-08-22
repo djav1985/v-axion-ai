@@ -11,3 +11,4 @@ async def pump_events(orchestrator, dbstate, refresh_interval: float = 0.5):
         snap = orchestrator.snapshot()
         dbstate.set_snapshot(snap.get("actors", []))
         # No event queue; clear/maintain events via snapshot only
+    return None
