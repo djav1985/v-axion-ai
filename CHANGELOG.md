@@ -8,3 +8,4 @@
 - Make HTTP tool imports lazy so optional dependencies no longer block startup and harden shell/file tool allowlists with real-path checks.
 - Expose `--provider`/`--model` CLI flags (and matching env vars) for selecting Gemma or OpenAI backends at runtime.
 - Expand async test coverage to include early-wake sleeps, message routing, and action/metadata handling.
+- Ship a real-time web dashboard with chat, live monologue list, and modal inspector alongside new UI CLI/env configuration options.
