@@ -27,6 +27,7 @@ from models.actions import (
 from models.injections import InjectionModel
 from models.state import MonologueStateModel
 from tool_registry import autodiscover_tools, registry as TOOL_REGISTRY
+from runtime.memory import FunctionalMemory, MemoryEntry
 
 # tools autodiscovered
 # tools autodiscovered
@@ -374,8 +375,23 @@ class Monologue:
         self.immortal = immortal
         self.children: set[str] = set()
         self.inbox: asyncio.Queue[str] = asyncio.Queue()
-        self.context_buffer: List[str] = []
         self.use_llm = use_llm
+        mem_size = int(os.getenv("FUNCTIONAL_MEMORY_MAX", "200"))
+        mem_decay = float(os.getenv("FUNCTIONAL_MEMORY_DECAY", "600"))
+        self.memory = FunctionalMemory(max_entries=mem_size, decay_after=mem_decay)
+        self.memory.add(
+            "goal",
+            self.state.goal,
+            tags={self.state.role, "goal"},
+            importance=1.2,
+            metadata={"step": 0, "raw": f"goal:{self.state.goal}"},
+        )
+
+    @property
+    def context_buffer(self) -> List[str]:
+        return [
+            self._format_memory_entry(entry) for entry in self.memory.recent(limit=50)
+        ]
 
     async def run(self):
         try:
@@ -417,7 +433,10 @@ class Monologue:
                 self.state.running = False
 
     def _build_prompt(self) -> str:
-        ctx_msgs = "\n".join(self.context_buffer[-10:])
+        recent_entries = self.memory.recent(limit=10)
+        ctx_msgs = "\n".join(
+            self._format_memory_entry(entry) for entry in recent_entries
+        )
         inbox_msgs = []
         while True:
             try:
@@ -429,6 +448,10 @@ class Monologue:
                 self._remember(f"inbox:{msg}")
         inbox = "\n".join(inbox_msgs)
         self.state.inbox_size = len(inbox_msgs)
+        related_entries: List[MemoryEntry] = []
+        if inbox:
+            related_entries = self.memory.recall(inbox, limit=5)
+        graph_lines = self.memory.graph_summary(limit=5)
         tool_lines = []
         for meta in self.o.tool_registry.describe():
             desc = meta.get("description") or ""
@@ -441,14 +464,24 @@ class Monologue:
         action_lines = [f"- {a['action']}: {a['description']}" for a in actions_meta]
         tools_block = "tools:\n" + ("\n".join(tool_lines) if tool_lines else "")
         actions_block = "actions:\n" + ("\n".join(action_lines) if action_lines else "")
+        related_block = "related_memory:\n" + (
+            "\n".join(self._format_memory_entry(entry) for entry in related_entries)
+            if related_entries
+            else ""
+        )
+        graph_block = "semantic_links:\n" + (
+            "\n".join(graph_lines) if graph_lines else ""
+        )
         sections = [
             "[INTEROLOG]",
             f"id={self.state.id} role={self.state.role} STEP:{self.state.step}",
             f"goal: {self.state.goal}",
-            f"recent_context:\n{ctx_msgs}",
+            f"recent_memory:\n{ctx_msgs}",
             f"inbox:\n{inbox}",
             tools_block,
             actions_block,
+            related_block,
+            graph_block,
         ]
         return "\n".join(sections) + "\n"
 
@@ -488,9 +521,39 @@ class Monologue:
         entry = entry.strip()
         if not entry:
             return
-        self.context_buffer.append(entry)
-        if len(self.context_buffer) > 50:
-            del self.context_buffer[:-50]
+        kind, content = self._classify_memory(entry)
+        importance = self._default_importance(kind)
+        text = content if content else kind
+        tags = {self.state.role, kind}
+        metadata = {"step": self.state.step, "raw": entry}
+        self.memory.add(kind, text, tags=tags, importance=importance, metadata=metadata)
+
+    def _format_memory_entry(self, entry: MemoryEntry) -> str:
+        raw = None
+        if isinstance(entry.metadata, dict):
+            raw = entry.metadata.get("raw")
+        if isinstance(raw, str) and raw:
+            return raw
+        prefix = entry.kind or "note"
+        return f"{prefix}:{entry.text}" if entry.text else prefix
+
+    @staticmethod
+    def _classify_memory(entry: str) -> tuple[str, str]:
+        if ":" in entry:
+            prefix, rest = entry.split(":", 1)
+            return (prefix.strip() or "note", rest.strip())
+        return ("note", entry.strip())
+
+    @staticmethod
+    def _default_importance(kind: str) -> float:
+        kind = kind.lower()
+        if kind in {"error", "alert"}:
+            return 2.0
+        if kind in {"goal", "decision"}:
+            return 1.5
+        if kind in {"inbox", "inject", "tool"}:
+            return 1.2
+        return 1.0
 
     async def _handle_builtin_action(self, act: ActionType) -> bool:
         if isinstance(act, InjectAction):
