@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 
@@ -11,7 +10,7 @@ from interolog import Orchestrator
 
 class DummyLLM:
     async def acomplete(self, prompt: str, system: str = "") -> str:
-        return "{\"actions\": []}"
+        return '{"actions": []}'
 
 
 @pytest.mark.asyncio
