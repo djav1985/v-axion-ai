@@ -4,3 +4,4 @@ torch
 aiohttp>=3.9
 openai>=1.0
 python-dotenv
+pytest-asyncio>=1.2

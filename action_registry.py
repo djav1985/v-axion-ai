@@ -1,40 +1,62 @@
-
 # v-axion-ai/action_registry.py
 # Purpose: Canonical registry for role-scoped actions and their handlers.
 
 from __future__ import annotations
-import os, json, uuid
-from typing import List, Dict, Any, Callable, Awaitable
+
+import json
+import os
+import uuid
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List
+
 from models.actions import (
     ACTION_DEFS,
-    OpenMonologue,
     AskUser,
-    Sleep,
-    MessageMonologue,
-    ListMonologue,
     KillMonologue,
+    ListMonologue,
+    MessageMonologue,
+    OpenMonologue,
+    Sleep,
 )
 
+if TYPE_CHECKING:  # pragma: no cover
+    from interolog import Monologue
+
+
 def _available_models() -> List[Dict[str, Any]]:
-    models = [{"provider":"hf_gemma","id":"google/gemma-3-270m","local":True}]
+    models = [{"provider": "hf_gemma", "id": "google/gemma-3-270m", "local": True}]
     if os.getenv("OPENAI_API_KEY"):
         models += [
-            {"provider":"openai","id":"gpt-4o-mini","local":False},
-            {"provider":"openai","id":"gpt-4o","local":False},
-            {"provider":"openai","id":"gpt-4.1-mini","local":False},
+            {"provider": "openai", "id": "gpt-4o-mini", "local": False},
+            {"provider": "openai", "id": "gpt-4o", "local": False},
+            {"provider": "openai", "id": "gpt-4.1-mini", "local": False},
         ]
     extra = os.getenv("AVAILABLE_MODELS", "").strip()
     if extra:
         for tok in [t for t in extra.split(",") if "/" in t]:
             p, mid = tok.split("/", 1)
-            models.append({"provider": p.strip(), "id": mid.strip(), "local": (p.strip()=="hf_gemma")})
+            models.append(
+                {
+                    "provider": p.strip(),
+                    "id": mid.strip(),
+                    "local": (p.strip() == "hf_gemma"),
+                }
+            )
     return models
 
+
 ROLE_ACTIONS = {
-    "main": ["open_monologue", "ask_user", "sleep", "message_monologue", "list_monologue", "kill_monologue"],
-    "sub":  ["sleep", "message_monologue", "kill_monologue"],
+    "main": [
+        "open_monologue",
+        "ask_user",
+        "sleep",
+        "message_monologue",
+        "list_monologue",
+        "kill_monologue",
+    ],
+    "sub": ["sleep", "message_monologue", "kill_monologue"],
     "comms": [],
 }
+
 
 def get_actions_for(role: str) -> List[Dict[str, Any]]:
     role = (role or "").lower()
@@ -46,8 +68,14 @@ def get_actions_for(role: str) -> List[Dict[str, Any]]:
         Model = meta["model"]
         desc = meta["description"]
         if name == "open_monologue":
-            desc += " Available models: " + ", ".join(f"{m['provider']}/{m['id']}" for m in avail) + "."
-        out.append({"action": name, "description": desc, "schema": Model.model_json_schema()})
+            desc += (
+                " Available models: "
+                + ", ".join(f"{m['provider']}/{m['id']}" for m in avail)
+                + "."
+            )
+        out.append(
+            {"action": name, "description": desc, "schema": Model.model_json_schema()}
+        )
     return out
 
 
@@ -81,7 +109,9 @@ async def _handle_sleep(monologue: "Monologue", model: Sleep) -> None:
     await monologue.o.sleep_with_early_wake(target, model.seconds)
 
 
-async def _handle_message_monologue(monologue: "Monologue", model: MessageMonologue) -> None:
+async def _handle_message_monologue(
+    monologue: "Monologue", model: MessageMonologue
+) -> None:
     """Send a message to another monologue and optionally wait for reply."""
     req_id = model.request_id or uuid.uuid4().hex[:8]
     payload = {
@@ -116,4 +146,3 @@ ACTION_HANDLERS: Dict[str, Handler] = {
     "list_monologue": _handle_list_monologue,
     "kill_monologue": _handle_kill_monologue,
 }
-
