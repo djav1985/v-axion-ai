@@ -43,8 +43,31 @@ Tools are optional: if a dependency such as `aiohttp` is missing the correspondi
 
 ## Tooling
 
-All tools are auto-discovered from the `tools/` package and described to every monologue inside its working prompt. You can also
-use the new `tool.list` and `tool.info` utilities to introspect capabilities at runtime.
+All tools are auto-discovered from drop-in modules under `tools/` and described to every monologue inside its working prompt. Place a file whose name does not start with an underscore in the directory, export a `TOOL = ToolSpec(...)`, and the registry will make it available at import time—no manual registration required. Helper modules prefixed with `_` are ignored by autodiscovery.
+
+```python
+# tools/my_cool_tool.py
+from pydantic import BaseModel
+from tool_registry import ToolSpec
+
+
+class Params(BaseModel):
+    value: int
+
+
+async def run(value: int) -> dict[str, int]:
+    return {"value": value * 2}
+
+
+TOOL = ToolSpec(
+    name="demo.double",
+    model=Params,
+    handler=run,
+    description="Double an integer",
+)
+```
+
+Use the built-in `tool.list` and `tool.info` utilities to introspect capabilities at runtime.
 
 - `tool.list` / `tool.info(tool_name=...)` &mdash; enumerate tools and fetch per-tool descriptions or schemas.
 - `file.read` / `file.write` / `file.append` / `file.delete` &mdash; basic text file utilities gated by an env-driven allowlist.

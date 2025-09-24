@@ -2,14 +2,28 @@
 # Purpose: Dynamic tool registry with Pydantic validation and auto-discovery.
 from __future__ import annotations
 
+import asyncio
 import importlib
+import inspect
 import pkgutil
-from typing import Any, Awaitable, Callable, Dict, List, Type
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
 
 class ToolError(Exception): ...
+
+
+@dataclass(slots=True)
+class ToolSpec:
+    """Lightweight descriptor for a single tool."""
+
+    name: str
+    model: Type[BaseModel]
+    handler: Callable[..., Any]
+    description: str = ""
+    instructions: str = ""
 
 
 class ToolRegistry:
@@ -19,10 +33,25 @@ class ToolRegistry:
         self._models: Dict[str, Type[BaseModel]] = {}
         self.ctx: Dict[str, Any] = {}
 
+    def _ensure_async(self, fn: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
+        if asyncio.iscoroutinefunction(fn):
+            return fn  # type: ignore[return-value]
+
+        if not callable(fn):
+            raise ToolError("Tool handler must be callable")
+
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = fn(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return await result  # type: ignore[no-any-return]
+            return result
+
+        return wrapper
+
     def register(
         self,
         name: str,
-        fn: Callable[..., Awaitable[Any]],
+        fn: Callable[..., Any],
         *,
         model: Type[BaseModel],
         description: str = "",
@@ -34,7 +63,7 @@ class ToolRegistry:
             raise ToolError(f"Tool already registered: {name}")
         if not (isinstance(model, type) and issubclass(model, BaseModel)):
             raise ToolError("Tool must declare a Pydantic BaseModel via model=")
-        self._tools[name] = fn
+        self._tools[name] = self._ensure_async(fn)
         self._models[name] = model
         self._meta[name] = {
             "name": name,
@@ -42,6 +71,23 @@ class ToolRegistry:
             "instructions": (instructions or (fn.__doc__ or "")).strip(),
             "schema": model.model_json_schema(),
         }
+
+    def register_spec(self, spec: ToolSpec, *, module: Optional[str] = None) -> None:
+        description = spec.description
+        instructions = spec.instructions or (spec.handler.__doc__ or "")
+        try:
+            self.register(
+                spec.name,
+                spec.handler,
+                model=spec.model,
+                description=description,
+                instructions=instructions,
+            )
+        except ToolError as exc:
+            if "already registered" in str(exc):
+                return
+            context = f" from {module}" if module else ""
+            raise ToolError(f"Failed to register {spec.name}{context}: {exc}") from exc
 
     def get(self, name: str) -> Callable[..., Awaitable[Any]]:
         try:
@@ -88,25 +134,41 @@ def tool(
     name: str, *, model: Type[BaseModel], description: str = "", instructions: str = ""
 ):
     def deco(fn):
-        async def awrap(*args, **kwargs):
-            return await fn(*args, **kwargs)
-
         registry.register(
             name,
-            awrap,
+            fn,
             model=model,
             description=description,
             instructions=instructions or (fn.__doc__ or ""),
         )
-        return awrap
+        return registry.get(name)
 
     return deco
+
+
+def _extract_specs(module: Any) -> Iterable[ToolSpec]:
+    tool_obj = getattr(module, "TOOL", None)
+    tools_obj = getattr(module, "TOOLS", None)
+    specs: List[ToolSpec] = []
+    if isinstance(tool_obj, ToolSpec):
+        specs.append(tool_obj)
+    if tools_obj:
+        if isinstance(tools_obj, ToolSpec):
+            specs.append(tools_obj)
+        else:
+            specs.extend(spec for spec in tools_obj if isinstance(spec, ToolSpec))
+    return specs
 
 
 def autodiscover_tools(package: str = "tools") -> None:
     pkg = importlib.import_module(package)
     for modinfo in pkgutil.iter_modules(pkg.__path__, pkg.__name__ + "."):
-        importlib.import_module(modinfo.name)
+        short_name = modinfo.name.rsplit(".", 1)[-1]
+        if short_name.startswith("_"):
+            continue
+        module = importlib.import_module(modinfo.name)
+        for spec in _extract_specs(module):
+            registry.register_spec(spec, module=modinfo.name)
 
 
 def get_tool_descriptions() -> List[Dict[str, Any]]:

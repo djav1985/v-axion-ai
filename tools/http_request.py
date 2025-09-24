@@ -1,10 +1,12 @@
-# tools/http_request.py
-# Purpose: Async HTTP client tool (GET, POST, OPTIONS, HEAD) for APIs, headers, or raw source.
+"""Drop-in HTTP client tool supporting simple REST interactions."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Union
-from pydantic import BaseModel, AnyUrl, Field, validator
-from tool_registry import tool
+
+from pydantic import AnyUrl, BaseModel, Field, validator
+
+from tool_registry import ToolSpec
 
 try:  # pragma: no cover - optional dependency
     import aiohttp  # type: ignore
@@ -36,7 +38,7 @@ class HTTPInput(BaseModel):
     allow_redirects: bool = True
 
     @validator("method")
-    def _normalize_method(cls, v: str) -> str:
+    def _normalize_method(cls, v: str) -> str:  # noqa: D401 - simple normalization
         return v.upper()
 
 
@@ -44,12 +46,12 @@ async def _to_text(resp: ClientResponse) -> str:
     try:
         return await resp.text()
     except UnicodeDecodeError:
-        b = await resp.read()
-        return b.decode("latin-1", errors="replace")
+        data = await resp.read()
+        return data.decode("latin-1", errors="replace")
 
 
-def _slim_headers(h) -> Dict[str, str]:
-    return {k: v for k, v in h.items()}
+def _slim_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    return {k: v for k, v in headers.items()}
 
 
 async def _do_request(
@@ -67,17 +69,7 @@ async def _do_request(
     return await session.request(inp.method, str(inp.url), **kwargs)
 
 
-@tool(
-    name="http_request",
-    model=HTTPInput,
-    description="HTTP client tool (GET, POST, OPTIONS, HEAD). Supports headers, API requests, or page source.",
-    instructions=(
-        "action='headers' -> returns response headers.\n"
-        "action='request' -> API call with status, headers, and JSON/text.\n"
-        "action='source'  -> GETs page and returns raw HTML/source."
-    ),
-)
-async def http_request(inp: HTTPInput) -> Dict[str, Any]:
+async def run(inp: HTTPInput) -> Dict[str, Any]:
     if aiohttp is None:
         raise RuntimeError(
             "aiohttp is required for http_request tool. Install aiohttp to enable it."
@@ -100,7 +92,7 @@ async def http_request(inp: HTTPInput) -> Dict[str, Any]:
                         "action": "headers",
                         "status": resp.status,
                         "url": str(resp.url),
-                        "headers": _slim_headers(resp.headers),
+                        "headers": _slim_headers(dict(resp.headers)),
                     }
             except aiohttp.ClientResponseError:
                 pass
@@ -112,7 +104,7 @@ async def http_request(inp: HTTPInput) -> Dict[str, Any]:
                     "action": "headers",
                     "status": resp.status,
                     "url": str(resp.url),
-                    "headers": _slim_headers(resp.headers),
+                    "headers": _slim_headers(dict(resp.headers)),
                 }
 
         if inp.action == "source":
@@ -125,7 +117,7 @@ async def http_request(inp: HTTPInput) -> Dict[str, Any]:
                     "url": str(resp.url),
                     "content_type": resp.headers.get("content-type"),
                     "encoding": resp.charset,
-                    "headers": _slim_headers(resp.headers),
+                    "headers": _slim_headers(dict(resp.headers)),
                     "text": text,
                 }
 
@@ -137,7 +129,7 @@ async def http_request(inp: HTTPInput) -> Dict[str, Any]:
                 "status": resp.status,
                 "url": str(resp.url),
                 "method": inp.method,
-                "headers": _slim_headers(resp.headers),
+                "headers": _slim_headers(dict(resp.headers)),
             }
             if inp.method in ("HEAD", "OPTIONS"):
                 return result
@@ -146,3 +138,16 @@ async def http_request(inp: HTTPInput) -> Dict[str, Any]:
             except Exception:
                 result["text"] = await _to_text(resp)
             return result
+
+
+TOOL = ToolSpec(
+    name="http_request",
+    model=HTTPInput,
+    handler=run,
+    description="HTTP client tool (GET, POST, OPTIONS, HEAD). Supports headers, API requests, or page source.",
+    instructions=(
+        "action='headers' -> returns response headers.\n"
+        "action='request' -> API call with status, headers, and JSON/text.\n"
+        "action='source'  -> GETs page and returns raw HTML/source."
+    ),
+)

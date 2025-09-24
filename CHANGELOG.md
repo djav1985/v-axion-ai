@@ -13,3 +13,5 @@
 - Introduce functional memory for every actor: vector-based recall, semantic graphs, dashboard introspection, and dedicated unit tests.
 - Extend the built-in tool catalog with meta-inspection (`tool.list`/`tool.info`), filesystem exploration (`fs.list`/`fs.stat`),
   and a Python subprocess executor (`python.exec`).
+- Rework tooling so each drop-in file under `tools/` exports `TOOL = ToolSpec(...)`, enabling automatic registration without
+  manual wiring while keeping helper modules opt-in.

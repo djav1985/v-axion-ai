@@ -1,4 +1,4 @@
-"""Python execution tool for running snippets in a subprocess."""
+"""Drop-in tool for executing Python code in a subprocess."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Dict
 
 from pydantic import BaseModel, Field
 
-from tool_registry import tool
+from tool_registry import ToolSpec
 
 
 class PythonExecParams(BaseModel):
@@ -16,13 +16,7 @@ class PythonExecParams(BaseModel):
     timeout: float = Field(30.0, ge=1.0, le=300.0, description="Timeout in seconds")
 
 
-@tool(
-    "python.exec",
-    model=PythonExecParams,
-    description="Execute Python code in an isolated subprocess",
-    instructions="Provide 'code'; stdout/stderr/returncode returned. Timeout configurable",
-)
-async def python_exec(code: str, timeout: float = 30.0) -> Dict[str, object]:
+async def run(code: str, timeout: float = 30.0) -> Dict[str, object]:
     """Run python code via `python -u -c` and capture output."""
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -50,3 +44,12 @@ async def python_exec(code: str, timeout: float = 30.0) -> Dict[str, object]:
         "stdout": out.decode(errors="ignore"),
         "stderr": err.decode(errors="ignore"),
     }
+
+
+TOOL = ToolSpec(
+    name="python.exec",
+    model=PythonExecParams,
+    handler=run,
+    description="Execute Python code in an isolated subprocess",
+    instructions="Provide 'code'; stdout/stderr/returncode returned. Timeout configurable",
+)

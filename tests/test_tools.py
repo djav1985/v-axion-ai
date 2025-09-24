@@ -1,9 +1,12 @@
+import importlib
+import pkgutil
 from pathlib import Path
 import tempfile
 
 import pytest
 
-from tool_registry import autodiscover_tools, registry
+import tools
+from tool_registry import ToolSpec, autodiscover_tools, registry
 
 
 if "tool.list" not in registry.list():
@@ -55,3 +58,14 @@ async def test_python_exec_runs_code():
     assert result["status"] == "ok"
     assert "4.0" in result["stdout"].strip()
     assert result["returncode"] == 0
+
+
+def test_every_tool_module_exports_tool_spec():
+    modules = pkgutil.iter_modules(tools.__path__, tools.__name__ + ".")
+    for modinfo in modules:
+        short_name = modinfo.name.rsplit(".", 1)[-1]
+        if short_name.startswith("_"):
+            continue
+        module = importlib.import_module(modinfo.name)
+        spec = getattr(module, "TOOL", None)
+        assert isinstance(spec, ToolSpec)
