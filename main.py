@@ -22,7 +22,6 @@ from models.state import MonologueStateModel
 async def printer(inj: InjectionModel, main_state: MonologueStateModel):
     print(f"[MAIN<-{inj.from_id}] {inj.content}", flush=True)
 
-
 async def run(
     goal: str,
     ui: str,
@@ -92,7 +91,6 @@ async def run(
         if web_dash:
             await web_dash.stop()
         await orch.shutdown()
-
 
 def main():
     default_provider = os.getenv("INTEROLOG_PROVIDER", "hf_gemma")
