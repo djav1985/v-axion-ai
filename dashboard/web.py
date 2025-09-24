@@ -135,7 +135,10 @@ class WebDashboard:
         mono_id = request.match_info.get("mono_id")
         actor = self.orch._actors.get(mono_id)  # type: ignore[attr-defined]
         if not actor:
-            raise web.HTTPNotFound(text=json.dumps({"error": "unknown id"}), content_type="application/json")
+            raise web.HTTPNotFound(
+                text=json.dumps({"error": "unknown id"}),
+                content_type="application/json",
+            )
         state = actor.state
         payload = {
             "id": state.id,
@@ -150,6 +153,10 @@ class WebDashboard:
             "children": list(actor.children),
             "recent_context": actor.context_buffer[-20:],
             "inbox_size": actor.inbox.qsize(),
+            "memory_recent": [
+                entry.as_dict() for entry in actor.memory.recent(limit=20)
+            ],
+            "memory_graph": actor.memory.graph_summary(limit=10),
         }
         return web.json_response(payload)
 
@@ -217,7 +224,9 @@ class WebDashboard:
         try:
             while True:
                 await asyncio.sleep(self.refresh)
-                await self._broadcast({"type": "snapshot", "payload": self.orch.snapshot()})
+                await self._broadcast(
+                    {"type": "snapshot", "payload": self.orch.snapshot()}
+                )
         except asyncio.CancelledError:
             pass
 

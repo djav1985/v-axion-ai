@@ -1,5 +1,5 @@
-# v-axion-ai/tools/shell.py
-# Purpose: Shell execution tool with env-based allowlist and Pydantic validation.
+"""Drop-in tool for running shell commands with allowlist checks."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,8 +8,10 @@ import shlex
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
-from tool_registry import tool
+
+from tool_registry import ToolSpec
 
 
 def _allowed_cmds() -> List[str]:
@@ -56,13 +58,7 @@ class ShellRunParams(BaseModel):
     command: str = Field(min_length=1)
 
 
-@tool(
-    "shell.run",
-    model=ShellRunParams,
-    description="Execute a shell command.",
-    instructions="Provide 'command'; returns stdout/stderr/returncode.",
-)
-async def shell_run(command: str) -> Dict[str, Any]:
+async def run(command: str) -> Dict[str, Any]:
     """Run the given shell command using /bin/sh -c and capture output."""
     _check_cmd(command)
     proc = await asyncio.create_subprocess_shell(
@@ -77,3 +73,12 @@ async def shell_run(command: str) -> Dict[str, Any]:
         "stdout": out.decode(errors="ignore"),
         "stderr": err.decode(errors="ignore"),
     }
+
+
+TOOL = ToolSpec(
+    name="shell.run",
+    model=ShellRunParams,
+    handler=run,
+    description="Execute a shell command.",
+    instructions="Provide 'command'; returns stdout/stderr/returncode.",
+)

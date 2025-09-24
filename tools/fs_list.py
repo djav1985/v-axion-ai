@@ -1,0 +1,107 @@
+"""Drop-in tool for listing directory contents."""
+
+from __future__ import annotations
+
+import fnmatch
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
+
+from pydantic import BaseModel, Field
+
+from tool_registry import ToolSpec
+from ._path_guard import ensure_path_allowed
+
+
+def _as_entry(path: Path) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "path": str(path),
+        "name": path.name,
+        "type": "dir" if path.is_dir() else "file",
+        "is_symlink": path.is_symlink(),
+    }
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        info["error"] = str(exc)
+        return info
+    info.update(
+        {
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
+        }
+    )
+    return info
+
+
+def _iter_dir(
+    root: Path,
+    *,
+    recursive: bool,
+    include_hidden: bool,
+) -> Iterable[Path]:
+    if recursive:
+        iterator = root.rglob("*")
+    else:
+        iterator = root.iterdir()
+    for child in iterator:
+        if not include_hidden and child.name.startswith("."):
+            continue
+        yield child
+
+
+class DirListParams(BaseModel):
+    path: str = Field(".", description="Directory path to inspect")
+    recursive: bool = Field(False, description="Recurse into subdirectories")
+    pattern: Optional[str] = Field(
+        default=None, description="Optional fnmatch pattern for filtering entries"
+    )
+    include_hidden: bool = Field(
+        False, description="If false, entries starting with '.' are skipped"
+    )
+    max_entries: int = Field(
+        200,
+        ge=1,
+        le=5000,
+        description="Limit the number of entries returned",
+    )
+
+
+async def run(
+    path: str,
+    recursive: bool = False,
+    pattern: Optional[str] = None,
+    include_hidden: bool = False,
+    max_entries: int = 200,
+) -> Dict[str, Any]:
+    """Return directory entries matching the query."""
+    ensure_path_allowed(path)
+    root = Path(path).expanduser()
+    if not root.exists():
+        return {"path": str(root), "entries": [], "error": "not found"}
+    if not root.is_dir():
+        return {"path": str(root), "entries": [], "error": "not a directory"}
+
+    entries: List[Dict[str, Any]] = []
+    try:
+        iterator = _iter_dir(root, recursive=recursive, include_hidden=include_hidden)
+        for item in iterator:
+            if pattern and not fnmatch.fnmatch(item.name, pattern):
+                continue
+            entries.append(_as_entry(item))
+            if len(entries) >= max_entries:
+                break
+    except OSError as exc:
+        return {"path": str(root), "entries": entries, "error": str(exc)}
+    return {"path": str(root), "entries": entries, "recursive": recursive}
+
+
+TOOL = ToolSpec(
+    name="fs.list",
+    model=DirListParams,
+    handler=run,
+    description="List files and directories",
+    instructions="Provide 'path'; optional pattern, recursion, and include_hidden",
+)

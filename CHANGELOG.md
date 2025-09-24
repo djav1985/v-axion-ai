@@ -10,3 +10,8 @@
 - Expand async test coverage to include early-wake sleeps, message routing, and action/metadata handling.
 - Ship a real-time web dashboard with chat, live monologue list, and modal inspector alongside new UI CLI/env configuration options.
 - Add a lightweight pytest hook so coroutine-based tests run without external plugins.
+- Introduce functional memory for every actor: vector-based recall, semantic graphs, dashboard introspection, and dedicated unit tests.
+- Extend the built-in tool catalog with meta-inspection (`tool.list`/`tool.info`), filesystem exploration (`fs.list`/`fs.stat`),
+  and a Python subprocess executor (`python.exec`).
+- Rework tooling so each drop-in file under `tools/` exports `TOOL = ToolSpec(...)`, enabling automatic registration without
+  manual wiring while keeping helper modules opt-in.
