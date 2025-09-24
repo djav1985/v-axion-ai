@@ -39,3 +39,15 @@ Configuration options can be supplied via environment variables or flags:
 - `MAX_SUB_STEPS`, `MAX_CHILDREN`, `CYCLE_DELAY`, `COMMS_*` for orchestration tuning
 
 Tools are optional: if a dependency such as `aiohttp` is missing the corresponding tool will raise a helpful runtime error instead of blocking startup.
+
+## Development
+
+The test suite relies on `async def` coroutines. A lightweight `conftest.py` plugin is included so the suite runs without third-party pytest extensions. To exercise the checks locally:
+
+```bash
+# Basic syntax/lint gate
+python -m py_compile $(git ls-files '*.py')
+
+# Run the async-enabled tests
+pytest
+```
