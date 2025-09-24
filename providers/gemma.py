@@ -1,27 +1,32 @@
 # v-axion-ai/providers/gemma.py
 # Purpose: Local Gemma provider using HuggingFace Transformers; singleton per model.
 from __future__ import annotations
-from typing import Optional, Any
+from typing import Any
 import asyncio
 import threading
 from dataclasses import dataclass
+
 
 # Lazy imports to avoid heavy startup
 def _lazy_imports():
     global AutoModelForCausalLM, AutoTokenizer, pipeline
     from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline  # type: ignore
 
+
 _singletons = {}
 _singletons_lock = threading.Lock()
+
 
 @dataclass
 class _Runner:
     pipe: Any
 
+
 class LocalGemma:
     """Singleton-backed local Gemma provider.
     Downloads model on first use into HF cache. Subsequent runs reuse it.
     """
+
     model_id: str
     runner: _Runner
 
@@ -42,7 +47,9 @@ class LocalGemma:
             _singletons[model_id] = inst
             return inst
 
-    async def acomplete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> str:
+    async def acomplete(
+        self, prompt: str, *, system: str = "", max_tokens: int = 512
+    ) -> str:
         """Return model text output given a prompt and optional system message.
 
         Offloads the blocking pipeline call to a thread to avoid blocking the
