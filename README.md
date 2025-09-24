@@ -41,6 +41,18 @@ Configuration options can be supplied via environment variables or flags:
 
 Tools are optional: if a dependency such as `aiohttp` is missing the corresponding tool will raise a helpful runtime error instead of blocking startup.
 
+## Tooling
+
+All tools are auto-discovered from the `tools/` package and described to every monologue inside its working prompt. You can also
+use the new `tool.list` and `tool.info` utilities to introspect capabilities at runtime.
+
+- `tool.list` / `tool.info(tool_name=...)` &mdash; enumerate tools and fetch per-tool descriptions or schemas.
+- `file.read` / `file.write` / `file.append` / `file.delete` &mdash; basic text file utilities gated by an env-driven allowlist.
+- `fs.list` / `fs.stat` &mdash; inspect directory contents and metadata with recursion, filters, and allowlist enforcement.
+- `shell.run` &mdash; execute allowlisted shell commands via `/bin/sh -c` and capture stdout/stderr.
+- `python.exec` &mdash; run Python snippets in a subprocess with timeout control.
+- `http_request` &mdash; perform HTTP(S) requests, fetch headers, or download raw source with optional custom headers and payloads.
+
 ## Functional memory
 
 Every monologue maintains a hybrid memory that blends vector similarity with a lightweight semantic graph. Memories are inserted whenever actors handle inbox messages, tool calls, injections, or errors. Retrieval uses cosine similarity over deterministic bag-of-words vectors combined with graph proximity—no external AI embedding services are required.

@@ -11,3 +11,5 @@
 - Ship a real-time web dashboard with chat, live monologue list, and modal inspector alongside new UI CLI/env configuration options.
 - Add a lightweight pytest hook so coroutine-based tests run without external plugins.
 - Introduce functional memory for every actor: vector-based recall, semantic graphs, dashboard introspection, and dedicated unit tests.
+- Extend the built-in tool catalog with meta-inspection (`tool.list`/`tool.info`), filesystem exploration (`fs.list`/`fs.stat`),
+  and a Python subprocess executor (`python.exec`).
